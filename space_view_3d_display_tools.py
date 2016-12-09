@@ -43,6 +43,7 @@ import bpy
 from bpy.types import (
         Operator,
         Panel,
+        PropertyGroup,
         )
 from bpy.props import (
         IntProperty,
@@ -51,9 +52,16 @@ from bpy.props import (
         )
 
 
+# define base dummy class for inheritance
+class BasePollCheck:
+    @classmethod
+    def poll(cls, context):
+        return True
+
+
 # Fast Navigate toggle function
 def trigger_fast_navigate(trigger):
-    scene = bpy.context.scene
+    scene = bpy.context.scene.display_tools
     scene.FastNavigateStop = False
 
     trigger = not trigger
@@ -61,7 +69,7 @@ def trigger_fast_navigate(trigger):
 
 # Control how to display particles during fast navigate
 def display_particles(mode):
-    scene = bpy.context.scene
+    scene = bpy.context.scene.display_tools
 
     if mode is True:
         for particles in bpy.data.particles:
@@ -81,91 +89,6 @@ def display_particles(mode):
                 particles.draw_percentage = scene.ParticlesPercentageDisplay
 
 
-# Do repetitive fast navigate related stuff
-def fast_navigate_stuff(self, context, event):
-    scene = bpy.context.scene
-    view = context.space_data
-
-    if bpy.context.area.type != 'VIEW_3D':
-        return self.cancel(context)
-
-    if event.type == 'ESC' or event.type == 'RET' or event.type == 'SPACE':
-        return self.cancel(context)
-
-    if scene.FastNavigateStop is True:
-        return self.cancel(context)
-
-    # fast navigate while orbit/panning
-    if event.type == 'MIDDLEMOUSE':
-        if scene.Delay is True:
-            if scene.DelayTime < scene.DelayTimeGlobal:
-                scene.DelayTime += 1
-        view.viewport_shade = scene.FastMode
-        self.mode = False
-
-    # fast navigate while transform operations
-    if event.type == 'G' or event.type == 'R' or event.type == 'S':
-        if scene.Delay is True:
-            if scene.DelayTime < scene.DelayTimeGlobal:
-                scene.DelayTime += 1
-        view.viewport_shade = scene.FastMode
-        self.mode = False
-
-    # fast navigate while menu popups or duplicates
-    if event.type == 'W' or event.type == 'D' or event.type == 'L'\
-      or event.type == 'U' or event.type == 'I' or event.type == 'M'\
-      or event.type == 'A' or event.type == 'B':
-        if scene.Delay is True:
-            if scene.DelayTime < scene.DelayTimeGlobal:
-                scene.DelayTime += 1
-        view.viewport_shade = scene.FastMode
-        self.mode = False
-
-    # fast navigate while numpad navigation
-    if event.type == 'NUMPAD_PERIOD' or event.type == 'NUMPAD_1'\
-      or event.type == 'NUMPAD_2' or event.type == 'NUMPAD_3'\
-      or event.type == 'NUMPAD_4' or event.type == 'NUMPAD_5'\
-      or event.type == 'NUMPAD_6' or event.type == 'NUMPAD_7'\
-      or event.type == 'NUMPAD_8' or event.type == 'NUMPAD_9':
-        if scene.Delay is True:
-            if scene.DelayTime < scene.DelayTimeGlobal:
-                scene.DelayTime += 1
-        view.viewport_shade = scene.FastMode
-        self.mode = False
-
-    # fast navigate while zooming with mousewheel too
-    if event.type == 'WHEELUPMOUSE' or event.type == 'WHEELDOWNMOUSE':
-        scene.DelayTime = scene.DelayTimeGlobal
-        view.viewport_shade = scene.FastMode
-        self.mode = False
-
-    if event.type == 'MOUSEMOVE':
-        if scene.Delay is True:
-            if scene.DelayTime == 0:
-                scene.DelayTime = scene.DelayTimeGlobal
-                view.viewport_shade = scene.OriginalMode
-                self.mode = True
-        else:
-            view.viewport_shade = scene.OriginalMode
-            self.mode = True
-
-    if scene.Delay is True:
-        scene.DelayTime -= 1
-        if scene.DelayTime == 0:
-            scene.DelayTime = scene.DelayTimeGlobal
-            view.viewport_shade = scene.OriginalMode
-            self.mode = True
-
-    if scene.ShowParticles is False:
-        for particles in bpy.data.particles:
-            if particles.type == 'EMITTER':
-                particles.draw_method = 'NONE'
-            else:
-                particles.draw_method = 'NONE'
-    else:
-        display_particles(self.mode)
-
-
 # Fast Navigate operator
 class FastNavigate(Operator):
     bl_idname = "view3d.fast_navigate_operator"
@@ -176,40 +99,131 @@ class FastNavigate(Operator):
     mode = BoolProperty(default=False)
 
     def modal(self, context, event):
-        scene = bpy.context.scene
+        scene = context.scene.display_tools
+
+        if scene.FastNavigateStop is True:
+            self.cancel(context)
+            return {'FINISHED'}
 
         if scene.EditActive is True:
-            fast_navigate_stuff(self, context, event)
+            self.fast_navigate_stuff(context, event)
             return {'PASS_THROUGH'}
         else:
             obj = context.active_object
             if obj:
                 if obj.mode != 'EDIT':
-                    fast_navigate_stuff(self, context, event)
+                    self.fast_navigate_stuff(context, event)
                     return {'PASS_THROUGH'}
                 else:
                     return {'PASS_THROUGH'}
             else:
-                fast_navigate_stuff(self, context, event)
+                self.fast_navigate_stuff(context, event)
                 return {'PASS_THROUGH'}
 
     def execute(self, context):
         context.window_manager.modal_handler_add(self)
         trigger_fast_navigate(self.trigger)
-        scene = bpy.context.scene
+        scene = context.scene.display_tools
         scene.DelayTime = scene.DelayTimeGlobal
         return {'RUNNING_MODAL'}
 
+    # Do repetitive fast navigate related stuff
+    def fast_navigate_stuff(self, context, event):
+        scene = context.scene.display_tools
+        view = context.space_data
+
+        if context.area.type != 'VIEW_3D':
+            self.cancel(context)
+            return {'CANCELLED'}
+
+        if event.type == 'ESC' or event.type == 'RET' or event.type == 'SPACE':
+            self.cancel(context)
+            return {'CANCELLED'}
+
+        if scene.FastNavigateStop is True:
+            self.cancel(context)
+            return {'CANCELLED'}
+
+        # fast navigate while orbit/panning
+        if event.type == 'MIDDLEMOUSE':
+            if scene.Delay is True:
+                if scene.DelayTime < scene.DelayTimeGlobal:
+                    scene.DelayTime += 1
+            view.viewport_shade = scene.FastMode
+            self.mode = False
+
+        # fast navigate while transform operations
+        if event.type == 'G' or event.type == 'R' or event.type == 'S':
+            if scene.Delay is True:
+                if scene.DelayTime < scene.DelayTimeGlobal:
+                    scene.DelayTime += 1
+            view.viewport_shade = scene.FastMode
+            self.mode = False
+
+        # fast navigate while menu popups or duplicates
+        if event.type == 'W' or event.type == 'D' or event.type == 'L'\
+          or event.type == 'U' or event.type == 'I' or event.type == 'M'\
+          or event.type == 'A' or event.type == 'B':
+            if scene.Delay is True:
+                if scene.DelayTime < scene.DelayTimeGlobal:
+                    scene.DelayTime += 1
+            view.viewport_shade = scene.FastMode
+            self.mode = False
+
+        # fast navigate while numpad navigation
+        if (event.type == 'NUMPAD_PERIOD' or event.type == 'NUMPAD_1' or
+           event.type == 'NUMPAD_2' or event.type == 'NUMPAD_3' or
+           event.type == 'NUMPAD_4' or event.type == 'NUMPAD_5' or
+           event.type == 'NUMPAD_6' or event.type == 'NUMPAD_7' or
+           event.type == 'NUMPAD_8' or event.type == 'NUMPAD_9'):
+
+            if scene.Delay is True:
+                if scene.DelayTime < scene.DelayTimeGlobal:
+                    scene.DelayTime += 1
+            view.viewport_shade = scene.FastMode
+            self.mode = False
+
+        # fast navigate while zooming with mousewheel too
+        if event.type == 'WHEELUPMOUSE' or event.type == 'WHEELDOWNMOUSE':
+            scene.DelayTime = scene.DelayTimeGlobal
+            view.viewport_shade = scene.FastMode
+            self.mode = False
+
+        if event.type == 'MOUSEMOVE':
+            if scene.Delay is True:
+                if scene.DelayTime == 0:
+                    scene.DelayTime = scene.DelayTimeGlobal
+                    view.viewport_shade = scene.OriginalMode
+                    self.mode = True
+            else:
+                view.viewport_shade = scene.OriginalMode
+                self.mode = True
+
+        if scene.Delay is True:
+            scene.DelayTime -= 1
+            if scene.DelayTime == 0:
+                scene.DelayTime = scene.DelayTimeGlobal
+                view.viewport_shade = scene.OriginalMode
+                self.mode = True
+
+        if scene.ShowParticles is False:
+            for particles in bpy.data.particles:
+                if particles.type == 'EMITTER':
+                    particles.draw_method = 'NONE'
+                else:
+                    particles.draw_method = 'NONE'
+        else:
+            display_particles(self.mode)
+
     def cancel(self, context):
-        scene = context.scene
+        scene = context.scene.display_tools
         for particles in bpy.data.particles:
             particles.draw_percentage = scene.InitialParticles
-        return {'CANCELLED'}
 
 
 # Fast Navigate Stop
 def fast_navigate_stop(context):
-    scene = bpy.context.scene
+    scene = context.scene.display_tools
     scene.FastNavigateStop = True
 
 
@@ -219,482 +233,226 @@ class FastNavigateStop(Operator):
     bl_label = "Stop"
     bl_description = "Stop Fast Navigate Operator"
 
-    FastNavigateStop = IntProperty(
-                            name="FastNavigateStop",
-                            description="Stop fast navigate mode",
-                            default=0
-                            )
-
     def execute(self, context):
         fast_navigate_stop(context)
         return {'FINISHED'}
 
 
-# Drawtype textured
-def draw_textured(context):
-    view = context.space_data
-    view.viewport_shade = 'TEXTURED'
-    bpy.context.scene.game_settings.material_mode = 'GLSL'
-    selection = bpy.context.selected_objects
+# Change draw type
+class DisplayDrawChange(Operator, BasePollCheck):
+    bl_idname = "view3d.display_draw_change"
+    bl_label = "Draw Type"
+    bl_description = "Change Display objects mode"
 
-    if not selection:
-        for obj in bpy.data.objects:
-            obj.draw_type = 'TEXTURED'
-    else:
-        for obj in selection:
-            obj.draw_type = 'TEXTURED'
-
-
-class DisplayTextured(Operator):
-    bl_idname = "view3d.display_textured"
-    bl_label = "Textured"
-    bl_description = "Display objects in textured mode"
-
-    @classmethod
-    def poll(cls, context):
-        return True
+    drawing = EnumProperty(
+            items=[('TEXTURED', 'Texture', 'Texture display mode'),
+                   ('SOLID', 'Solid', 'Solid display mode'),
+                   ('WIRE', 'Wire', 'Wire display mode'),
+                   ('BOUNDS', 'Bounds', 'Bounds display mode'),
+                   ],
+            name="Draw Type",
+            default='SOLID'
+            )
 
     def execute(self, context):
-        draw_textured(context)
-        return {'FINISHED'}
+        try:
+            view = context.space_data
+            view.viewport_shade = 'TEXTURED'
+            context.scene.game_settings.material_mode = 'GLSL'
+            selection = context.selected_objects
 
-
-# Drawtype solid
-def draw_solid(context):
-    view = context.space_data
-    view.viewport_shade = 'TEXTURED'
-    bpy.context.scene.game_settings.material_mode = 'GLSL'
-    selection = bpy.context.selected_objects
-
-    if not(selection):
-        for obj in bpy.data.objects:
-            obj.draw_type = 'SOLID'
-    else:
-        for obj in selection:
-            obj.draw_type = 'SOLID'
-
-
-class DisplaySolid(Operator):
-    bl_idname = "view3d.display_solid"
-    bl_label = "Solid"
-    bl_description = "Display objects in solid mode"
-
-    @classmethod
-    def poll(cls, context):
-        return True
-
-    def execute(self, context):
-        draw_solid(context)
-
-        return {'FINISHED'}
-
-
-# Drawtype wire
-def draw_wire(context):
-    view = context.space_data
-    view.viewport_shade = 'TEXTURED'
-    bpy.context.scene.game_settings.material_mode = 'GLSL'
-    selection = bpy.context.selected_objects
-
-    if not(selection):
-        for obj in bpy.data.objects:
-            obj.draw_type = 'WIRE'
-    else:
-        for obj in selection:
-            obj.draw_type = 'WIRE'
-
-
-class DisplayWire(Operator):
-    bl_idname = "view3d.display_wire"
-    bl_label = "Wire"
-    bl_description = "Display objects in wireframe mode"
-
-    @classmethod
-    def poll(cls, context):
-        return True
-
-    def execute(self, context):
-        draw_wire(context)
-        return {'FINISHED'}
-
-
-# Drawtype bounds
-def draw_bounds(context):
-    view = context.space_data
-    view.viewport_shade = 'TEXTURED'
-    bpy.context.scene.game_settings.material_mode = 'GLSL'
-    selection = bpy.context.selected_objects
-
-    if not(selection):
-        for obj in bpy.data.objects:
-            obj.draw_type = 'BOUNDS'
-    else:
-        for obj in selection:
-            obj.draw_type = 'BOUNDS'
-
-
-class DisplayBounds(Operator):
-    bl_idname = "view3d.display_bounds"
-    bl_label = "Bounds"
-    bl_description = "Display objects in bounds mode"
-
-    @classmethod
-    def poll(cls, context):
-        return True
-
-    def execute(self, context):
-        draw_bounds(context)
-        return {'FINISHED'}
-
-
-# Shade smooth
-def shade_smooth(context):
-    selection = bpy.context.selected_objects
-    try:
-        if not(selection):
-            for obj in bpy.data.objects:
-                bpy.ops.object.select_all(action='TOGGLE')
-                bpy.ops.object.shade_smooth()
-                bpy.ops.object.select_all(action='TOGGLE')
-        else:
-            obj = context.active_object
-            if obj.mode == 'OBJECT':
-                for obj in selection:
-                    bpy.ops.object.shade_smooth()
+            if not selection:
+                for obj in bpy.data.objects:
+                    obj.draw_type = self.drawing
             else:
-                bpy.ops.mesh.faces_shade_smooth()
-    except:
-        print("Setting shade smooth failed")
+                for obj in selection:
+                    obj.draw_type = self.drawing
+        except:
+            self.report({'ERROR'}, "Setting Draw Type could not be applied")
+            return {'CANCELLED'}
 
-
-class DisplayShadeSmooth(Operator):
-    bl_idname = "view3d.display_shade_smooth"
-    bl_label = "Smooth"
-    bl_description = "Display shade smooth meshes"
-
-    @classmethod
-    def poll(cls, context):
-        return True
-
-    def execute(self, context):
-        shade_smooth(context)
         return {'FINISHED'}
 
 
-# Shade flat
-def shade_flat(context):
-    selection = bpy.context.selected_objects
+# Shade smooth/flat
+class DisplayShadeSmoothFlat(Operator, BasePollCheck):
+    bl_idname = "view3d.display_shade_smooth_flat"
+    bl_label = "Smooth/Flat"
+    bl_description = "Toggle shade smooth/flat shading"
 
-    if not(selection):
-        for obj in bpy.data.objects:
-            bpy.ops.object.select_all(action='TOGGLE')
-            bpy.ops.object.shade_flat()
-            bpy.ops.object.select_all(action='TOGGLE')
-    else:
-        obj = context.active_object
-        if obj.mode == 'OBJECT':
-            for obj in selection:
-                bpy.ops.object.shade_flat()
-        else:
-            bpy.ops.mesh.faces_shade_flat()
-
-
-class DisplayShadeFlat(Operator):
-    bl_idname = "view3d.display_shade_flat"
-    bl_label = "Flat"
-    bl_description = "Display shade flat meshes"
-
-    @classmethod
-    def poll(cls, context):
-        return True
+    smoothing = BoolProperty(default=True)
 
     def execute(self, context):
-        shade_flat(context)
+        try:
+            selection = bpy.context.selected_objects
+            if not selection:
+                for obj in bpy.data.objects:
+                    bpy.ops.object.select_all(action='TOGGLE')
+                    if self.smoothing:
+                        bpy.ops.object.shade_smooth()
+                    else:
+                        bpy.ops.object.shade_flat()
+                    bpy.ops.object.select_all(action='TOGGLE')
+            else:
+                obj = context.active_object
+                if obj.mode == 'OBJECT':
+                    for obj in selection:
+                        if self.smoothing:
+                            bpy.ops.object.shade_smooth()
+                        else:
+                            bpy.ops.object.shade_flat()
+                else:
+                    if self.smoothing:
+                        bpy.ops.mesh.faces_shade_smooth()
+                    else:
+                        bpy.ops.mesh.faces_shade_flat()
+        except:
+            self.report({'ERROR'}, "Setting Smooth/Flat shading failed")
+            return {'CANCELLED'}
+
         return {'FINISHED'}
 
 
-# Shadeless on
-def shadeless_on(context):
-    selection = bpy.context.selected_objects
+# Shadeless switch
+class DisplayShadelesSwitch(Operator, BasePollCheck):
+    bl_idname = "view3d.display_shadeless_switch"
+    bl_label = "On/Off"
+    bl_description = "Display/Hide shadeless material"
 
-    if not(selection):
-        for obj in bpy.data.materials:
-            obj.use_shadeless = True
-    else:
-        for sel in selection:
-            if sel.type == 'MESH':
-                materials = sel.data.materials
-                for mat in materials:
-                    mat.use_shadeless = True
+    shades = BoolProperty(default=False)
+
+    def execute(self, context):
+        try:
+            selection = bpy.context.selected_objects
+
+            if not(selection):
+                for obj in bpy.data.materials:
+                    obj.use_shadeless = self.shades
+            else:
+                for sel in selection:
+                    if sel.type == 'MESH':
+                        materials = sel.data.materials
+                        for mat in materials:
+                            mat.use_shadeless = self.shades
+        except:
+            self.report({'ERROR'}, "Display/Hide shadeless material failed")
+            return {'CANCELLED'}
+
+        return {'FINISHED'}
 
 
-class DisplayShadelessOn(Operator):
-    bl_idname = "view3d.display_shadeless_on"
+# Wireframe switch
+class DisplayWireframeSwitch(Operator, BasePollCheck):
+    bl_idname = "view3d.display_wire_switch"
+    bl_label = "On/Off"
+    bl_description = "Display/Hide wireframe overlay"
+
+    wires = BoolProperty(default=False)
+
+    def execute(self, context):
+        try:
+            selection = bpy.context.selected_objects
+
+            if not(selection):
+                for obj in bpy.data.objects:
+                    obj.show_wire = self.wires
+                    obj.show_all_edges = self.wires
+            else:
+                for obj in selection:
+                    obj.show_wire = self.wires
+                    obj.show_all_edges = self.wires
+        except:
+            self.report({'ERROR'}, "Display/Hide wireframe overlay failed")
+            return {'CANCELLED'}
+
+        return {'FINISHED'}
+
+
+# Bounds switch
+class DisplayBoundsSwitch(Operator, BasePollCheck):
+    bl_idname = "view3d.display_bounds_switch"
+    bl_label = "On/Off"
+    bl_description = "Display/Hide Bounding box overlay"
+
+    bounds = BoolProperty(default=False)
+
+    def execute(self, context):
+        try:
+            scene = context.scene.display_tools
+            selection = context.selected_objects
+
+            if not selection:
+                for obj in bpy.data.objects:
+                    obj.show_bounds = self.bounds
+                    if self.bounds:
+                        obj.draw_bounds_type = scene.BoundingMode
+            else:
+                for obj in selection:
+                    obj.show_bounds = self.bounds
+                    if self.bounds:
+                        obj.draw_bounds_type = scene.BoundingMode
+        except:
+            self.report({'ERROR'}, "Display/Hide Bounding box overlay failed")
+            return {'CANCELLED'}
+
+        return {'FINISHED'}
+
+
+# Double Sided switch
+class DisplayDoubleSidedSwitch(Operator, BasePollCheck):
+    bl_idname = "view3d.display_double_sided_switch"
+    bl_label = "On/Off"
+    bl_description = "Turn on/off face double shaded mode"
+
+    double_side = BoolProperty(default=False)
+
+    def execute(self, context):
+        try:
+            selection = bpy.context.selected_objects
+
+            if not selection:
+                for mesh in bpy.data.meshes:
+                    mesh.show_double_sided = self.double_side
+            else:
+                for sel in selection:
+                    if sel.type == 'MESH':
+                        mesh = sel.data
+                        mesh.show_double_sided = self.double_side
+        except:
+            self.report({'ERROR'}, "Turn on/off face double shaded mode failed")
+            return {'CANCELLED'}
+
+        return {'FINISHED'}
+
+
+# XRay switch
+class DisplayXRayOn(Operator, BasePollCheck):
+    bl_idname = "view3d.display_x_ray_switch"
     bl_label = "On"
-    bl_description = "Display shadeless material"
+    bl_description = "X-Ray display on/off"
 
-    @classmethod
-    def poll(cls, context):
-        return True
+    xrays = BoolProperty(default=False)
 
     def execute(self, context):
-        shadeless_on(context)
-        return {'FINISHED'}
+        try:
+            selection = context.selected_objects
+
+            if not selection:
+                for obj in bpy.data.objects:
+                    obj.show_x_ray = self.xrays
+            else:
+                for obj in selection:
+                    obj.show_x_ray = self.xrays
+        except:
+            self.report({'ERROR'}, "Turn on/off X-ray mode failed")
+            return {'CANCELLED'}
 
-
-# Shadeless off
-def shadeless_off(context):
-    selection = bpy.context.selected_objects
-
-    if not(selection):
-        for obj in bpy.data.materials:
-            obj.use_shadeless = False
-    else:
-        for sel in selection:
-            if sel.type == 'MESH':
-                materials = sel.data.materials
-                for mat in materials:
-                    mat.use_shadeless = False
-
-
-class DisplayShadelessOff(Operator):
-    bl_idname = "view3d.display_shadeless_off"
-    bl_label = "Off"
-    bl_description = "Display shaded material"
-
-    @classmethod
-    def poll(cls, context):
-        return True
-
-    def execute(self, context):
-        shadeless_off(context)
-        return {'FINISHED'}
-
-
-# Wireframe on
-def wire_on(context):
-    selection = bpy.context.selected_objects
-
-    if not(selection):
-        for obj in bpy.data.objects:
-            obj.show_wire = True
-            obj.show_all_edges = True
-
-    else:
-        for obj in selection:
-            obj.show_wire = True
-            obj.show_all_edges = True
-
-
-class DisplayWireframeOn(Operator):
-    bl_idname = "view3d.display_wire_on"
-    bl_label = "On"
-    bl_description = "Display wireframe overlay on"
-
-    @classmethod
-    def poll(cls, context):
-        return True
-
-    def execute(self, context):
-        wire_on(context)
-        return {'FINISHED'}
-
-
-# Wireframe off
-def wire_off(context):
-    selection = bpy.context.selected_objects
-
-    if not(selection):
-        for obj in bpy.data.objects:
-            obj.show_wire = False
-            obj.show_all_edges = False
-
-    else:
-        for obj in selection:
-            obj.show_wire = False
-            obj.show_all_edges = False
-
-
-class DisplayWireframeOff(Operator):
-    bl_idname = "view3d.display_wire_off"
-    bl_label = "Off"
-    bl_description = "Display wireframe overlay off"
-
-    @classmethod
-    def poll(cls, context):
-        return True
-
-    def execute(self, context):
-        wire_off(context)
-        return {'FINISHED'}
-
-
-# Bounds on
-def bounds_on(context):
-    scene = context.scene
-    selection = bpy.context.selected_objects
-
-    if not(selection):
-        for obj in bpy.data.objects:
-            obj.show_bounds = True
-            obj.draw_bounds_type = scene.BoundingMode
-    else:
-        for obj in selection:
-            obj.show_bounds = True
-            obj.draw_bounds_type = scene.BoundingMode
-
-
-class DisplayBoundsOn(Operator):
-    bl_idname = "view3d.display_bounds_on"
-    bl_label = "On"
-    bl_description = "Display Bounding box overlay on"
-
-    @classmethod
-    def poll(cls, context):
-        return True
-
-    def execute(self, context):
-        bounds_on(context)
-        return {'FINISHED'}
-
-
-# Wireframe off
-def bounds_off(context):
-    selection = bpy.context.selected_objects
-
-    if not(selection):
-        for obj in bpy.data.objects:
-            obj.show_bounds = False
-    else:
-        for obj in selection:
-            obj.show_bounds = False
-
-
-class DisplayBoundsOff(Operator):
-    bl_idname = "view3d.display_bounds_off"
-    bl_label = "Off"
-    bl_description = "Display Bounding box overlay off"
-
-    @classmethod
-    def poll(cls, context):
-        return True
-
-    def execute(self, context):
-        bounds_off(context)
-        return {'FINISHED'}
-
-
-# Double Sided on
-def double_sided_on(context):
-    selection = bpy.context.selected_objects
-
-    if not(selection):
-        for mesh in bpy.data.meshes:
-            mesh.show_double_sided = True
-    else:
-        for sel in selection:
-            if sel.type == 'MESH':
-                mesh = sel.data
-                mesh.show_double_sided = True
-
-
-class DisplayDoubleSidedOn(Operator):
-    bl_idname = "view3d.display_double_sided_on"
-    bl_label = "On"
-    bl_description = "Turn on face double shaded mode"
-
-    @classmethod
-    def poll(cls, context):
-        return True
-
-    def execute(self, context):
-        double_sided_on(context)
-        return {'FINISHED'}
-
-
-# Double Sided off
-def double_sided_off(context):
-    selection = bpy.context.selected_objects
-
-    if not(selection):
-        for mesh in bpy.data.meshes:
-            mesh.show_double_sided = False
-    else:
-        for sel in selection:
-            if sel.type == 'MESH':
-                mesh = sel.data
-                mesh.show_double_sided = False
-
-
-class DisplayDoubleSidedOff(Operator):
-    bl_idname = "view3d.display_double_sided_off"
-    bl_label = "Off"
-    bl_description = "Turn off face double sided shade mode"
-
-    @classmethod
-    def poll(cls, context):
-        return True
-
-    def execute(self, context):
-        double_sided_off(context)
-        return {'FINISHED'}
-
-
-# XRay on
-def x_ray_on(context):
-    selection = bpy.context.selected_objects
-
-    if not(selection):
-        for obj in bpy.data.objects:
-            obj.show_x_ray = True
-    else:
-        for obj in selection:
-            obj.show_x_ray = True
-
-
-class DisplayXRayOn(Operator):
-    bl_idname = "view3d.display_x_ray_on"
-    bl_label = "On"
-    bl_description = "X-Ray display on"
-
-    @classmethod
-    def poll(cls, context):
-        return True
-
-    def execute(self, context):
-        x_ray_on(context)
-        return {'FINISHED'}
-
-
-# XRay off
-def x_ray_off(context):
-    selection = bpy.context.selected_objects
-
-    if not(selection):
-        for obj in bpy.data.objects:
-            obj.show_x_ray = False
-    else:
-        for obj in selection:
-            obj.show_x_ray = False
-
-
-class DisplayXRayOff(Operator):
-    bl_idname = "view3d.display_x_ray_off"
-    bl_label = "Off"
-    bl_description = "X-Ray display off"
-
-    @classmethod
-    def poll(cls, context):
-        return True
-
-    def execute(self, context):
-        x_ray_off(context)
         return {'FINISHED'}
 
 
 # Set Render Settings
-def set_render_settings(conext):
-    scene = bpy.context.scene
+def set_render_settings(context):
+    scene = context.scene
     render = scene.render
     render.simplify_subdivision = 0
     render.simplify_shadow_samples = 0
@@ -702,10 +460,10 @@ def set_render_settings(conext):
     render.simplify_ao_sss = 0
 
 
-class DisplaySimplify(Operator):
-    '''Display scene simplified'''
+class DisplaySimplify(Operator, BasePollCheck):
     bl_idname = "view3d.display_simplify"
     bl_label = "Reset"
+    bl_description = "Display scene simplified"
 
     Mode = EnumProperty(
         items=[('WIREFRAME', 'Wireframe', ''),
@@ -728,359 +486,205 @@ class DisplaySimplify(Operator):
         subtype='FACTOR'
         )
 
-    @classmethod
-    def poll(cls, context):
-        return True
-
     def execute(self, context):
         set_render_settings(context)
         return {'FINISHED'}
 
 
-# Display Modifiers Render on
-def modifiers_render_on(context):
-    scene = bpy.context.scene
-    scene['Simplify'] = 1
+# Display Modifiers Render Switch
+class DisplayModifiersRenderSwitch(Operator, BasePollCheck):
+    bl_idname = "view3d.display_modifiers_render_switch"
+    bl_label = "On/Off"
+    bl_description = "Display/Hide modifiers on render"
 
-    selection = bpy.context.selected_objects
-
-    if not(selection):
-        for obj in bpy.data.objects:
-            for mod in obj.modifiers:
-                mod.show_render = True
-    else:
-        for obj in selection:
-            for mod in obj.modifiers:
-                mod.show_render = True
-
-
-class DisplayModifiersRenderOn(Operator):
-    bl_idname = "view3d.display_modifiers_render_on"
-    bl_label = "On"
-    bl_description = "Display modifiers in render"
-
-    @classmethod
-    def poll(cls, context):
-        return True
+    mod_render = BoolProperty(default=True)
 
     def execute(self, context):
-        modifiers_render_on(context)
+        try:
+            if self.mod_render:
+                scene = context.scene.display_tools
+                scene.Simplify = 1
+
+            selection = context.selected_objects
+
+            if not selection:
+                for obj in bpy.data.objects:
+                    for mod in obj.modifiers:
+                        mod.show_render = self.mod_render
+            else:
+                for obj in selection:
+                    for mod in obj.modifiers:
+                        mod.show_render = self.mod_render
+        except:
+            self.report({'ERROR'}, "Display/Hide all modifiers for render failed")
+            return {'CANCELLED'}
+
         return {'FINISHED'}
 
 
-# Display Modifiers Render off
-def modifiers_render_off(context):
-    selection = bpy.context.selected_objects
+# Display Modifiers Viewport switch
+class DisplayModifiersViewportSwitch(Operator, BasePollCheck):
+    bl_idname = "view3d.display_modifiers_viewport_switch"
+    bl_label = "On/Off"
+    bl_description = "Display/Hide modifiers in the viewport"
 
-    if not(selection):
-        for obj in bpy.data.objects:
-            for mod in obj.modifiers:
-                mod.show_render = False
-    else:
-        for obj in selection:
-            for mod in obj.modifiers:
-                mod.show_render = False
-
-
-class DisplayModifiersRenderOff(Operator):
-    bl_idname = "view3d.display_modifiers_render_off"
-    bl_label = "Off"
-    bl_description = "Hide modifiers in render"
-
-    @classmethod
-    def poll(cls, context):
-        return True
+    mod_switch = BoolProperty(default=True)
 
     def execute(self, context):
-        modifiers_render_off(context)
+        try:
+            selection = context.selected_objects
+
+            if not(selection):
+                for obj in bpy.data.objects:
+                    for mod in obj.modifiers:
+                        mod.show_viewport = self.mod_switch
+            else:
+                for obj in selection:
+                    for mod in obj.modifiers:
+                        mod.show_viewport = self.mod_switch
+        except:
+            self.report({'ERROR'}, "Display/Hide modifiers in the viewport failed")
+            return {'CANCELLED'}
+
         return {'FINISHED'}
 
 
-# Display Modifiers Viewport on
-def modifiers_viewport_on(context):
-    selection = bpy.context.selected_objects
+# Display Modifiers Edit Switch
+class DisplayModifiersEditSwitch(Operator, BasePollCheck):
+    bl_idname = "view3d.display_modifiers_edit_switch"
+    bl_label = "On/Off"
+    bl_description = "Display/Hide modifiers during edit mode"
 
-    if not(selection):
-        for obj in bpy.data.objects:
-            for mod in obj.modifiers:
-                mod.show_viewport = True
-    else:
-        for obj in selection:
-            for mod in obj.modifiers:
-                mod.show_viewport = True
-
-
-class DisplayModifiersViewportOn(Operator):
-    bl_idname = "view3d.display_modifiers_viewport_on"
-    bl_label = "On"
-    bl_description = "Display modifiers in viewport"
-
-    @classmethod
-    def poll(cls, context):
-        return True
+    mod_edit = BoolProperty(default=True)
 
     def execute(self, context):
-        modifiers_viewport_on(context)
+        try:
+            selection = context.selected_objects
+
+            if not(selection):
+                for obj in bpy.data.objects:
+                    for mod in obj.modifiers:
+                        mod.show_in_editmode = self.mod_edit
+            else:
+                for obj in selection:
+                    for mod in obj.modifiers:
+                        mod.show_in_editmode = self.mod_edit
+        except:
+            self.report({'ERROR'}, "Display/Hide all modifiers failed")
+            return {'CANCELLED'}
+
         return {'FINISHED'}
 
 
-# Display Modifiers Viewport off
-def modifiers_viewport_off(context):
-    selection = bpy.context.selected_objects
-
-    if not(selection):
-        for obj in bpy.data.objects:
-            for mod in obj.modifiers:
-                mod.show_viewport = False
-    else:
-        for obj in selection:
-            for mod in obj.modifiers:
-                mod.show_viewport = False
-
-
-class DisplayModifiersViewportOff(Operator):
-    bl_idname = "view3d.display_modifiers_viewport_off"
-    bl_label = "Off"
-    bl_description = "Hide modifiers in viewport"
-
-    @classmethod
-    def poll(cls, context):
-        return True
-
-    def execute(self, context):
-        modifiers_viewport_off(context)
-        return {'FINISHED'}
-
-
-# Display Modifiers Edit on
-def modifiers_edit_on(context):
-    selection = bpy.context.selected_objects
-
-    if not(selection):
-        for obj in bpy.data.objects:
-            for mod in obj.modifiers:
-                mod.show_in_editmode = True
-    else:
-        for obj in selection:
-            for mod in obj.modifiers:
-                mod.show_in_editmode = True
-
-
-class DisplayModifiersEditOn(Operator):
-    bl_idname = "view3d.display_modifiers_edit_on"
-    bl_label = "On"
-    bl_description = "Display modifiers during edit mode"
-
-    @classmethod
-    def poll(cls, context):
-        return True
-
-    def execute(self, context):
-        modifiers_edit_on(context)
-        return {'FINISHED'}
-
-
-# Display Modifiers Edit off
-def modifiers_edit_off(context):
-    selection = bpy.context.selected_objects
-
-    if not(selection):
-        for obj in bpy.data.objects:
-            for mod in obj.modifiers:
-                mod.show_in_editmode = False
-    else:
-        for obj in selection:
-            for mod in obj.modifiers:
-                mod.show_in_editmode = False
-
-
-class DisplayModifiersEditOff(Operator):
-    bl_idname = "view3d.display_modifiers_edit_off"
-    bl_label = "Off"
-    bl_description = "Hide modifiers during edit mode"
-
-    @classmethod
-    def poll(cls, context):
-        return True
-
-    def execute(self, context):
-        modifiers_edit_off(context)
-        return {'FINISHED'}
-
-
-# Display Modifiers Cage on
-def modifiers_cage_on(context):
-    selection = bpy.context.selected_objects
-
-    if not(selection):
-        for obj in bpy.data.objects:
-            for mod in obj.modifiers:
-                mod.show_on_cage = True
-    else:
-        for obj in selection:
-            for mod in obj.modifiers:
-                mod.show_on_cage = True
-
-
-class DisplayModifiersCageOn(Operator):
-    bl_idname = "view3d.display_modifiers_cage_on"
-    bl_label = "On"
+class DisplayModifiersCageSet(Operator, BasePollCheck):
+    bl_idname = "view3d.display_modifiers_cage_set"
+    bl_label = "On/Off"
     bl_description = "Display modifiers editing cage during edit mode"
 
-    @classmethod
-    def poll(cls, context):
-        return True
+    set_cage = BoolProperty(default=True)
 
     def execute(self, context):
-        modifiers_cage_on(context)
-        return {'FINISHED'}
+        selection = context.selected_objects
+        try:
+            if not selection:
+                for obj in bpy.data.objects:
+                    for mod in obj.modifiers:
+                        mod.show_on_cage = self.set_cage
+            else:
+                for obj in selection:
+                    for mod in obj.modifiers:
+                        mod.show_on_cage = self.set_cage
+        except:
+            self.report({'ERROR'}, "Setting Editing Cage all modifiers failed")
+            return {'CANCELLED'}
 
-
-# Display Modifiers Cage off
-def modifiers_cage_off(context):
-    selection = bpy.context.selected_objects
-
-    if not(selection):
-        for obj in bpy.data.objects:
-            for mod in obj.modifiers:
-                mod.show_on_cage = False
-    else:
-        for obj in selection:
-            for mod in obj.modifiers:
-                mod.show_on_cage = False
-
-
-class DisplayModifiersCageOff(Operator):
-    bl_idname = "view3d.display_modifiers_cage_off"
-    bl_label = "Off"
-    bl_description = "Hide modifiers editing cage during edit mode"
-
-    @classmethod
-    def poll(cls, context):
-        return True
-
-    def execute(self, context):
-        modifiers_cage_off(context)
         return {'FINISHED'}
 
 
 # Display Modifiers Expand
-def modifiers_expand(context):
-    selection = bpy.context.selected_objects
+class DisplayModifiersExpandCollapse(Operator, BasePollCheck):
+    bl_idname = "view3d.display_modifiers_expand_collapse"
+    bl_label = "Expand/Collapse"
+    bl_description = "Expand/Collapse all modifiers on modifier stack"
 
-    if not(selection):
-        for obj in bpy.data.objects:
-            for mod in obj.modifiers:
-                mod.show_expanded = True
-    else:
-        for obj in selection:
-            for mod in obj.modifiers:
-                mod.show_expanded = True
-
-
-class DisplayModifiersExpand(Operator):
-    bl_idname = "view3d.display_modifiers_expand"
-    bl_label = "Expand"
-    bl_description = "Expand all modifiers on modifier stack"
-
-    @classmethod
-    def poll(cls, context):
-        return True
+    expands = BoolProperty(default=True)
 
     def execute(self, context):
-        modifiers_expand(context)
-        return {'FINISHED'}
+        selection = context.selected_objects
+        try:
+            if not selection:
+                for obj in bpy.data.objects:
+                    for mod in obj.modifiers:
+                        mod.show_expanded = self.expands
+            else:
+                for obj in selection:
+                    for mod in obj.modifiers:
+                        mod.show_expanded = self.expands
 
+            # update Properties
+            for area in context.screen.areas:
+                if area.type in ('PROPERTIES'):
+                    area.tag_redraw()
+        except:
+            self.report({'ERROR'}, "Expand/Collapse all modifiers failed")
+            return {'CANCELLED'}
 
-# Display Modifiers Collapse
-def modifiers_collapse(context):
-    selection = bpy.context.selected_objects
-
-    if not(selection):
-        for obj in bpy.data.objects:
-            for mod in obj.modifiers:
-                mod.show_expanded = False
-    else:
-        for obj in selection:
-            for mod in obj.modifiers:
-                mod.show_expanded = False
-
-
-class DisplayModifiersCollapse(Operator):
-    bl_idname = "view3d.display_modifiers_collapse"
-    bl_label = "Collapse"
-    bl_description = "Collapse all modifiers on modifier stack"
-
-    @classmethod
-    def poll(cls, context):
-        return True
-
-    def execute(self, context):
-        modifiers_collapse(context)
         return {'FINISHED'}
 
 
 # Apply modifiers
-def modifiers_apply(context):
-    selection = bpy.context.selected_objects
-
-    if not selection:
-        bpy.ops.object.select_all(action='TOGGLE')
-        bpy.ops.object.convert(target='MESH', keep_original=False)
-        bpy.ops.object.select_all(action='TOGGLE')
-    else:
-        for mesh in selection:
-            if mesh.type == "MESH":
-                bpy.ops.object.convert(target='MESH', keep_original=False)
-
-
-class DisplayModifiersApply(Operator):
-    '''Apply modifiers'''
+class DisplayModifiersApply(Operator, BasePollCheck):
     bl_idname = "view3d.display_modifiers_apply"
     bl_label = "Apply All"
-
-    @classmethod
-    def poll(cls, context):
-        return True
+    bl_description = "Apply modifiers"
 
     def execute(self, context):
-        modifiers_apply(context)
+        selection = context.selected_objects
+        try:
+            if not selection:
+                bpy.ops.object.select_all(action='TOGGLE')
+                bpy.ops.object.convert(target='MESH', keep_original=False)
+                bpy.ops.object.select_all(action='TOGGLE')
+            else:
+                for mesh in selection:
+                    if mesh.type == "MESH":
+                        bpy.ops.object.convert(target='MESH', keep_original=False)
+        except:
+            self.report({'ERROR'}, "Apply modifiers could not be executed")
+            return {'CANCELLED'}
+
         return {'FINISHED'}
 
 
 # Delete modifiers
-def modifiers_delete(context):
-    selection = bpy.context.selected_objects
-
-    if not(selection):
-        for obj in bpy.data.objects:
-            for mod in obj.modifiers:
-                bpy.context.scene.objects.active = obj
-                bpy.ops.object.modifier_remove(modifier=mod.name)
-    else:
-        for obj in selection:
-            for mod in obj.modifiers:
-                bpy.context.scene.objects.active = obj
-                bpy.ops.object.modifier_remove(modifier=mod.name)
-
-
-class DisplayModifiersDelete(Operator):
+class DisplayModifiersDelete(Operator, BasePollCheck):
     bl_idname = "view3d.display_modifiers_delete"
     bl_label = "Delete All"
     bl_description = "Delete modifiers"
 
-    @classmethod
-    def poll(cls, context):
-        return True
-
     def execute(self, context):
-        modifiers_delete(context)
+        selection = context.selected_objects
+        try:
+            if not(selection):
+                for obj in bpy.data.objects:
+                    for mod in obj.modifiers:
+                        bpy.context.scene.objects.active = obj
+                        bpy.ops.object.modifier_remove(modifier=mod.name)
+            else:
+                for obj in selection:
+                    for mod in obj.modifiers:
+                        bpy.context.scene.objects.active = obj
+                        bpy.ops.object.modifier_remove(modifier=mod.name)
+        except:
+            self.report({'ERROR'}, "Delete modifiers could not be executed")
+            return {'CANCELLED'}
+
         return {'FINISHED'}
 
 
 # Put dummy modifier for boost subsurf
 def modifiers_set_dummy(context):
-    selection = bpy.context.selected_objects
+    selection = context.selected_objects
 
     if not(selection):
         for obj in bpy.data.objects:
@@ -1109,7 +713,7 @@ def modifiers_set_dummy(context):
 
 # Delete dummy modifier
 def modifiers_delete_dummy(context):
-    selection = bpy.context.selected_objects
+    selection = context.selected_objects
 
     if not(selection):
         for obj in bpy.data.objects:
@@ -1127,299 +731,67 @@ def modifiers_delete_dummy(context):
                     bpy.ops.object.modifier_remove(modifier="SimpleDeform.001")
 
 
-class DisplayAddDummy(Operator):
+class DisplayAddDummy(Operator, BasePollCheck):
     bl_idname = "view3d.display_modifiers_set_dummy"
     bl_label = "Put Dummy"
     bl_description = ("Add a dummy simple deform modifier to boost "
                      "subsurf modifier viewport performance")
-
-    @classmethod
-    def poll(cls, context):
-        return True
 
     def execute(self, context):
         modifiers_set_dummy(context)
         return {'FINISHED'}
 
 
-class DisplayDeleteDummy(Operator):
+class DisplayDeleteDummy(Operator, BasePollCheck):
     bl_idname = "view3d.display_modifiers_delete_dummy"
     bl_label = "Delete Dummy"
     bl_description = ("Delete a dummy simple deform modifier to boost "
                       "subsurf modifier viewport performance")
-
-    @classmethod
-    def poll(cls, context):
-        return True
 
     def execute(self, context):
         modifiers_delete_dummy(context)
         return {'FINISHED'}
 
 
-# Display subsurf level 0
-def modifiers_subsurf_level_0(context):
-    selection = bpy.context.selected_objects
-
-    if not selection:
-        for obj in bpy.data.objects:
-            bpy.context.scene.objects.active = obj
-            bpy.ops.object.modifier_add(type='SUBSURF')
-            value = 0
-            for mod in obj.modifiers:
-                if mod.type == 'SUBSURF':
-                    value = value + 1
-                    mod.levels = 0
-                if value > 1:
-                    bpy.ops.object.modifier_remove(modifier="Subsurf")
-    else:
-        for obj in selection:
-            bpy.ops.object.subdivision_set(level=0, relative=False)
-            for mod in obj.modifiers:
-                if mod.type == 'SUBSURF':
-                    mod.levels = 0
-
-
-# Display subsurf level 1
-def modifiers_subsurf_level_1(context):
-    selection = bpy.context.selected_objects
-
-    if not(selection):
-        for obj in bpy.data.objects:
-            bpy.context.scene.objects.active = obj
-            bpy.ops.object.modifier_add(type='SUBSURF')
-            value = 0
-            for mod in obj.modifiers:
-                if mod.type == 'SUBSURF':
-                    value = value + 1
-                    mod.levels = 1
-                if value > 1:
-                    bpy.ops.object.modifier_remove(modifier="Subsurf")
-    else:
-        for obj in selection:
-            bpy.ops.object.subdivision_set(level=1, relative=False)
-            for mod in obj.modifiers:
-                if mod.type == 'SUBSURF':
-                    mod.levels = 1
-
-
-# Display subsurf level 2
-def modifiers_subsurf_level_2(context):
-    selection = bpy.context.selected_objects
-
-    if not(selection):
-        for obj in bpy.data.objects:
-            bpy.context.scene.objects.active = obj
-            bpy.ops.object.modifier_add(type='SUBSURF')
-            value = 0
-            for mod in obj.modifiers:
-                if mod.type == 'SUBSURF':
-                    value = value + 1
-                    mod.levels = 2
-                if value > 1:
-                    bpy.ops.object.modifier_remove(modifier="Subsurf")
-    else:
-        for obj in selection:
-            bpy.ops.object.subdivision_set(level=2, relative=False)
-            for mod in obj.modifiers:
-                if mod.type == 'SUBSURF':
-                    mod.levels = 2
-
-
-# Display subsurf level 3
-def modifiers_subsurf_level_3(context):
-    selection = bpy.context.selected_objects
-
-    if not(selection):
-        for obj in bpy.data.objects:
-            bpy.context.scene.objects.active = obj
-            bpy.ops.object.modifier_add(type='SUBSURF')
-            value = 0
-            for mod in obj.modifiers:
-                if mod.type == 'SUBSURF':
-                    value = value + 1
-                    mod.levels = 3
-                if value > 1:
-                    bpy.ops.object.modifier_remove(modifier="Subsurf")
-    else:
-        for obj in selection:
-            bpy.ops.object.subdivision_set(level=3, relative=False)
-            for mod in obj.modifiers:
-                if mod.type == 'SUBSURF':
-                    mod.levels = 3
-
-
-# Display subsurf level 4
-def modifiers_subsurf_level_4(context):
-    selection = bpy.context.selected_objects
-
-    if not(selection):
-        for obj in bpy.data.objects:
-            bpy.context.scene.objects.active = obj
-            bpy.ops.object.modifier_add(type='SUBSURF')
-            value = 0
-            for mod in obj.modifiers:
-                if mod.type == 'SUBSURF':
-                    value = value + 1
-                    mod.levels = 4
-                if value > 1:
-                    bpy.ops.object.modifier_remove(modifier="Subsurf")
-    else:
-        for obj in selection:
-            bpy.ops.object.subdivision_set(level=4, relative=False)
-            for mod in obj.modifiers:
-                if mod.type == 'SUBSURF':
-                    mod.levels = 4
-
-
-# Display subsurf level 5
-def modifiers_subsurf_level_5(context):
-    selection = bpy.context.selected_objects
-
-    if not(selection):
-        for obj in bpy.data.objects:
-            bpy.context.scene.objects.active = obj
-            bpy.ops.object.modifier_add(type='SUBSURF')
-            value = 0
-            for mod in obj.modifiers:
-                if mod.type == 'SUBSURF':
-                    value = value + 1
-                    mod.levels = 5
-                if value > 1:
-                    bpy.ops.object.modifier_remove(modifier="Subsurf")
-    else:
-        for obj in selection:
-            bpy.ops.object.subdivision_set(level=5, relative=False)
-            for mod in obj.modifiers:
-                if mod.type == 'SUBSURF':
-                    mod.levels = 5
-
-
-# Display subsurf level 6
-def modifiers_subsurf_level_6(context):
-    selection = bpy.context.selected_objects
-
-    if not(selection):
-        for obj in bpy.data.objects:
-            bpy.context.scene.objects.active = obj
-            bpy.ops.object.modifier_add(type='SUBSURF')
-            value = 0
-            for mod in obj.modifiers:
-                if mod.type == 'SUBSURF':
-                    value = value + 1
-                    mod.levels = 6
-                if value > 1:
-                    bpy.ops.object.modifier_remove(modifier="Subsurf")
-    else:
-        for obj in selection:
-            bpy.ops.object.subdivision_set(level=6, relative=False)
-            for mod in obj.modifiers:
-                if mod.type == 'SUBSURF':
-                    mod.levels = 6
-
-
-# main class of Display subsurf level 0
-class ModifiersSubsurfLevel_0(Operator):
-    bl_idname = "view3d.modifiers_subsurf_level_0"
-    bl_label = "0"
+class ModifiersSubsurfLevel_Set(Operator, BasePollCheck):
+    bl_idname = "view3d.modifiers_subsurf_level_set"
+    bl_label = "Set Subsurf level"
     bl_description = "Change subsurf modifier level"
 
-    @classmethod
-    def poll(cls, context):
-        return True
+    level = IntProperty(
+        name="Subsurf Level",
+        description="Change subsurf modifier level",
+        default=1,
+        min=0,
+        max=10,
+        soft_min=0,
+        soft_max=6
+        )
 
     def execute(self, context):
-        modifiers_subsurf_level_0(context)
-        return {'FINISHED'}
+        selection = context.selected_objects
+        try:
+            if not selection:
+                for obj in bpy.data.objects:
+                    context.scene.objects.active = obj
+                    bpy.ops.object.modifier_add(type='SUBSURF')
+                    value = 0
+                    for mod in obj.modifiers:
+                        if mod.type == 'SUBSURF':
+                            value = value + 1
+                            mod.levels = self.level
+                        if value > 1:
+                            bpy.ops.object.modifier_remove(modifier="Subsurf")
+            else:
+                for obj in selection:
+                    bpy.ops.object.subdivision_set(level=self.level, relative=False)
+                    for mod in obj.modifiers:
+                        if mod.type == 'SUBSURF':
+                            mod.levels = self.level
+        except:
+            self.report({'ERROR'}, "Setting the Subsurf level could not be applied")
+            return {'CANCELLED'}
 
-
-# main class of Display subsurf level 1
-class ModifiersSubsurfLevel_1(Operator):
-    bl_idname = "view3d.modifiers_subsurf_level_1"
-    bl_label = "1"
-    bl_description = "Change subsurf modifier level"
-
-    @classmethod
-    def poll(cls, context):
-        return True
-
-    def execute(self, context):
-        modifiers_subsurf_level_1(context)
-        return {'FINISHED'}
-
-
-# main class of Display subsurf level 2
-class ModifiersSubsurfLevel_2(Operator):
-    bl_idname = "view3d.modifiers_subsurf_level_2"
-    bl_label = "2"
-    bl_description = "Change subsurf modifier level"
-
-    @classmethod
-    def poll(cls, context):
-        return True
-
-    def execute(self, context):
-        modifiers_subsurf_level_2(context)
-        return {'FINISHED'}
-
-
-# main class of Display subsurf level 3
-class ModifiersSubsurfLevel_3(Operator):
-    bl_idname = "view3d.modifiers_subsurf_level_3"
-    bl_label = "3"
-    bl_description = "Change subsurf modifier level"
-
-    @classmethod
-    def poll(cls, context):
-        return True
-
-    def execute(self, context):
-        modifiers_subsurf_level_3(context)
-        return {'FINISHED'}
-
-
-# main class of Display subsurf level 4
-class ModifiersSubsurfLevel_4(Operator):
-    bl_idname = "view3d.modifiers_subsurf_level_4"
-    bl_label = "4"
-    bl_description = "Change subsurf modifier level"
-
-    @classmethod
-    def poll(cls, context):
-        return True
-
-    def execute(self, context):
-        modifiers_subsurf_level_4(context)
-        return {'FINISHED'}
-
-
-# main class of Display subsurf level 5
-class ModifiersSubsurfLevel_5(Operator):
-    bl_idname = "view3d.modifiers_subsurf_level_5"
-    bl_label = "5"
-    bl_description = "Change subsurf modifier level"
-
-    @classmethod
-    def poll(cls, context):
-        return True
-
-    def execute(self, context):
-        modifiers_subsurf_level_5(context)
-        return {'FINISHED'}
-
-
-# main class of Display subsurf level 6
-class ModifiersSubsurfLevel_6(Operator):
-    bl_idname = "view3d.modifiers_subsurf_level_6"
-    bl_label = "6"
-    bl_description = "Change subsurf modifier level"
-
-    @classmethod
-    def poll(cls, context):
-        return True
-
-    def execute(self, context):
-        modifiers_subsurf_level_6(context)
         return {'FINISHED'}
 
 
@@ -1435,7 +807,7 @@ class VIEW3D_PT_FastNavigate(Panel):
         layout = self.layout
 
         # Tools
-        scene = context.scene
+        scene = context.scene.display_tools
         row = layout.row(align=True)
         row.alignment = 'LEFT'
         row.operator("view3d.fast_navigate_operator")
@@ -1468,13 +840,18 @@ class VIEW3D_PT_DisplayMode(Panel):
         col = layout.column()
         col.alignment = 'EXPAND'
         row = col.row()
-        row.operator("view3d.display_textured", icon='TEXTURE_SHADED')
-        row.operator("view3d.display_solid", icon='SOLID')
+        row.operator("view3d.display_draw_change", text="Textured",
+                     icon='TEXTURE_SHADED').drawing = 'TEXTURED'
+        row.operator("view3d.display_draw_change", text="Solid",
+                    icon='SOLID').drawing = 'SOLID'
+
         col = layout.column()
         col.alignment = 'EXPAND'
         row = col.row()
-        row.operator("view3d.display_wire", icon='WIRE')
-        row.operator("view3d.display_bounds", icon='BBOX')
+        row.operator("view3d.display_draw_change", text="Wire",
+                     icon='WIRE').drawing = 'WIRE'
+        row.operator("view3d.display_draw_change", text="Bounds",
+                     icon='BBOX').drawing = 'BOUNDS'
 
 
 # main class for Shading Setup
@@ -1491,34 +868,46 @@ class VIEW3D_PT_ShadingSetup(Panel):
         # Tools
         col = layout.column(align=True)
         row = col.row()
-        row.operator("view3d.display_shade_smooth")
-        row.operator("view3d.display_shade_flat")
+        row.operator("view3d.display_shade_smooth_flat",
+                    text="Smooth").smoothing = True
+        row.operator("view3d.display_shade_smooth_flat",
+                    text="Flat").smoothing = False
+
         row = col.row()
-        row.operator("view3d.display_shadeless_on", "Shadeless On",
-                      icon='SOLID')
-        row.operator("view3d.display_shadeless_off",
-                     "Shadeless Off", icon='SOLID')
+        row.operator("view3d.display_shadeless_switch", "Shadeless On",
+                      icon='SOLID').shades = True
+        row.operator("view3d.display_shadeless_switch",
+                     "Shadeless Off", icon='SOLID').shades = False
+
         row = col.row()
-        row.operator("view3d.display_wire_on", "Wire On", icon='WIRE')
-        row.operator("view3d.display_wire_off", "Wire Off", icon='WIRE')
+        row.operator("view3d.display_wire_switch", "Wire On",
+                    icon='WIRE').wires = True
+        row.operator("view3d.display_wire_switch", "Wire Off",
+                    icon='WIRE').wires = False
+
         row = col.row()
-        row.operator("view3d.display_bounds_on", "Bounds On", icon='BBOX')
-        row.operator("view3d.display_bounds_off", "Bounds Off", icon='BBOX')
+        row.operator("view3d.display_bounds_switch", "Bounds On",
+                    icon='BBOX').bounds = True
+        row.operator("view3d.display_bounds_switch", "Bounds Off",
+                    icon='BBOX').bounds = False
+
         row = col.row()
-        row.operator("view3d.display_double_sided_on",
-                     "DSided On", icon='MESH_DATA')
-        row.operator("view3d.display_double_sided_off",
-                     "DSided Off", icon='MESH_DATA')
+        row.operator("view3d.display_double_sided_switch",
+                     "DSided On", icon='MESH_DATA').double_side = True
+        row.operator("view3d.display_double_sided_switch",
+                     "DSided Off", icon='MESH_DATA').double_side = False
+
         row = col.row()
-        row.operator("view3d.display_x_ray_on",
-                     "XRay On", icon='GHOST_ENABLED')
-        row.operator("view3d.display_x_ray_off",
-                     "XRay Off", icon='GHOST_ENABLED')
+        row.operator("view3d.display_x_ray_switch",
+                     "XRay On", icon='GHOST_ENABLED').xrays = True
+        row.operator("view3d.display_x_ray_switch",
+                     "XRay Off", icon='GHOST_ENABLED').xrays = False
+
         row = col.row()
         row.separator()
 
         row = col.row()
-        scene = context.scene
+        scene = context.scene.display_tools
         row.prop(scene, "BoundingMode")
 
 
@@ -1544,6 +933,7 @@ class VIEW3D_PT_SceneVisualization(Panel):
         layout.prop(space, "show_backface_culling")
         layout.prop(space, "show_all_objects_origin")
         layout.prop(render, "use_simplify", "Simplify")
+
         if scene.render.use_simplify is True:
             layout.label("Settings :")
             row = layout.row()
@@ -1571,51 +961,62 @@ class VIEW3D_PT_ModifierTools(Panel):
         col = layout.column(align=True)
         col.alignment = 'EXPAND'
         row = col.row()
-        row.operator("view3d.display_modifiers_render_on",
-                      icon='RENDER_STILL')
-        row.operator("view3d.display_modifiers_render_off")
-        row.operator("view3d.display_modifiers_viewport_on",
-                     icon='RESTRICT_VIEW_OFF')
-        row.operator("view3d.display_modifiers_viewport_off")
+        row.operator("view3d.display_modifiers_render_switch", text="On",
+                      icon='RENDER_STILL').mod_render = True
+        row.operator("view3d.display_modifiers_render_switch",
+                      text="Off").mod_render = False
+        row.operator("view3d.display_modifiers_viewport_switch", text="On",
+                     icon='RESTRICT_VIEW_OFF').mod_switch = True
+        row.operator("view3d.display_modifiers_viewport_switch",
+                    text="Off").mod_switch = False
+
         col = layout.column(align=True)
         col.alignment = 'EXPAND'
         row = col.row()
-        row.operator("view3d.display_modifiers_edit_on", icon='EDITMODE_HLT')
-        row.operator("view3d.display_modifiers_edit_off")
-        row.operator("view3d.display_modifiers_cage_on",
-                     icon='EDITMODE_HLT')
-        row.operator("view3d.display_modifiers_cage_off")
+        row.operator("view3d.display_modifiers_edit_switch", text="On",
+                    icon='EDITMODE_HLT').mod_edit = True
+        row.operator("view3d.display_modifiers_edit_switch",
+                    text="Off").mod_edit = False
+        row.operator("view3d.display_modifiers_cage_set", text="On",
+                     icon='EDITMODE_HLT').set_cage = True
+        row.operator("view3d.display_modifiers_cage_set",
+                     text="Off").set_cage = False
+
         row = layout.row(align=True)
-        row.operator("view3d.display_modifiers_expand", icon='TRIA_DOWN')
-        row.operator("view3d.display_modifiers_collapse", icon='TRIA_RIGHT')
+        row.operator("view3d.display_modifiers_expand_collapse", text="Expand",
+                    icon='TRIA_DOWN').expands = True
+        row.operator("view3d.display_modifiers_expand_collapse", text="Collapse",
+                    icon='TRIA_RIGHT').expands = False
+
         row = layout.row(align=True)
         row.operator("view3d.display_modifiers_apply", icon='MODIFIER')
         row.operator("view3d.display_modifiers_delete", icon='X')
+
         row = layout.row(align=True)
         row.operator("view3d.display_modifiers_set_dummy",
                      icon='OUTLINER_OB_ARMATURE')
         row.operator("view3d.display_modifiers_delete_dummy",
                      icon='X')
         layout.label("Subdivision Level", icon='MOD_SUBSURF')
+
         row = layout.row(align=True)
-        row.operator("view3d.modifiers_subsurf_level_0")
-        row.operator("view3d.modifiers_subsurf_level_1")
-        row.operator("view3d.modifiers_subsurf_level_2")
-        row.operator("view3d.modifiers_subsurf_level_3")
-        row.operator("view3d.modifiers_subsurf_level_4")
-        row.operator("view3d.modifiers_subsurf_level_5")
-        row.operator("view3d.modifiers_subsurf_level_6")
+        row.operator("view3d.modifiers_subsurf_level_set", text="0").level = 0
+        row.operator("view3d.modifiers_subsurf_level_set", text="1").level = 1
+        row.operator("view3d.modifiers_subsurf_level_set", text="2").level = 2
+        row.operator("view3d.modifiers_subsurf_level_set", text="3").level = 3
+        row.operator("view3d.modifiers_subsurf_level_set", text="4").level = 4
+        row.operator("view3d.modifiers_subsurf_level_set", text="5").level = 5
+        row.operator("view3d.modifiers_subsurf_level_set", text="6").level = 6
 
 
-# register the classes and props
-def register():
-
+# define scene props
+class display_tools_scene_props(PropertyGroup):
     # Init delay variables
-    bpy.types.Scene.Delay = BoolProperty(
+    Delay = BoolProperty(
             default=False,
             description="Activate delay return to normal viewport mode"
             )
-    bpy.types.Scene.DelayTime = IntProperty(
+    DelayTime = IntProperty(
             default=30,
             min=1,
             max=500,
@@ -1624,7 +1025,7 @@ def register():
             description="Delay time to return to normal viewport"
                         "mode after move your mouse cursor"
             )
-    bpy.types.Scene.DelayTimeGlobal = IntProperty(
+    DelayTimeGlobal = IntProperty(
             default=30,
             min=1,
             max=500,
@@ -1634,41 +1035,41 @@ def register():
                         "mode after move your mouse cursor"
             )
     # Init variable for fast navigate
-    bpy.types.Scene.EditActive = BoolProperty(
+    EditActive = BoolProperty(
             default=True,
             description="Activate for fast navigate in edit mode too"
             )
 
     # Init properties for scene
-    bpy.types.Scene.FastNavigateStop = BoolProperty(
+    FastNavigateStop = BoolProperty(
             name="Fast Navigate Stop",
             description="Stop fast navigate mode",
             default=False
             )
-    bpy.types.Scene.OriginalMode = EnumProperty(
+    OriginalMode = EnumProperty(
             items=[('TEXTURED', 'Texture', 'Texture display mode'),
-                ('SOLID', 'Solid', 'Solid display mode')],
+                   ('SOLID', 'Solid', 'Solid display mode')],
             name="Normal",
             default='SOLID'
             )
-    bpy.types.Scene.BoundingMode = EnumProperty(
+    BoundingMode = EnumProperty(
             items=[('BOX', 'Box', 'Box shape'),
-                ('SPHERE', 'Sphere', 'Sphere shape'),
-                ('CYLINDER', 'Cylinder', 'Cylinder shape'),
-                ('CONE', 'Cone', 'Cone shape')],
+                   ('SPHERE', 'Sphere', 'Sphere shape'),
+                   ('CYLINDER', 'Cylinder', 'Cylinder shape'),
+                   ('CONE', 'Cone', 'Cone shape')],
             name="BB Mode"
             )
-    bpy.types.Scene.FastMode = EnumProperty(
+    FastMode = EnumProperty(
             items=[('WIREFRAME', 'Wireframe', 'Wireframe display'),
-                ('BOUNDBOX', 'Bounding Box', 'Bounding Box display')],
+                   ('BOUNDBOX', 'Bounding Box', 'Bounding Box display')],
             name="Fast"
             )
-    bpy.types.Scene.ShowParticles = BoolProperty(
+    ShowParticles = BoolProperty(
             name="Show Particles",
             description="Show or hide particles on fast navigate mode",
             default=True
             )
-    bpy.types.Scene.ParticlesPercentageDisplay = IntProperty(
+    ParticlesPercentageDisplay = IntProperty(
             name="Display",
             description="Display only a percentage of particles",
             default=25,
@@ -1678,7 +1079,7 @@ def register():
             soft_max=100,
             subtype='FACTOR'
             )
-    bpy.types.Scene.InitialParticles = IntProperty(
+    InitialParticles = IntProperty(
             name="Count for initial particle setting before enter fast navigate",
             description="Display a percentage value of particles",
             default=100,
@@ -1687,111 +1088,28 @@ def register():
             soft_min=0,
             soft_max=100
             )
-
-    bpy.types.Scene.Symplify = IntProperty(
+    Symplify = IntProperty(
             name="Integer",
             description="Enter an integer"
             )
 
-    bpy.utils.register_class(FastNavigate)
-    bpy.utils.register_class(DisplayTextured)
-    bpy.utils.register_class(DisplaySolid)
-    bpy.utils.register_class(DisplayWire)
-    bpy.utils.register_class(DisplayBounds)
-    bpy.utils.register_class(DisplayWireframeOn)
-    bpy.utils.register_class(DisplayWireframeOff)
-    bpy.utils.register_class(DisplayBoundsOn)
-    bpy.utils.register_class(DisplayBoundsOff)
-    bpy.utils.register_class(DisplayShadeSmooth)
-    bpy.utils.register_class(DisplayShadeFlat)
-    bpy.utils.register_class(DisplayShadelessOn)
-    bpy.utils.register_class(DisplayShadelessOff)
-    bpy.utils.register_class(DisplayDoubleSidedOn)
-    bpy.utils.register_class(DisplayDoubleSidedOff)
-    bpy.utils.register_class(DisplayXRayOn)
-    bpy.utils.register_class(DisplayXRayOff)
-    bpy.utils.register_class(DisplayModifiersRenderOn)
-    bpy.utils.register_class(DisplayModifiersRenderOff)
-    bpy.utils.register_class(DisplayModifiersViewportOn)
-    bpy.utils.register_class(DisplayModifiersViewportOff)
-    bpy.utils.register_class(DisplayModifiersEditOn)
-    bpy.utils.register_class(DisplayModifiersEditOff)
-    bpy.utils.register_class(DisplayModifiersCageOn)
-    bpy.utils.register_class(DisplayModifiersCageOff)
-    bpy.utils.register_class(DisplayModifiersExpand)
-    bpy.utils.register_class(DisplayModifiersCollapse)
-    bpy.utils.register_class(DisplayModifiersApply)
-    bpy.utils.register_class(DisplayModifiersDelete)
-    bpy.utils.register_class(DisplayAddDummy)
-    bpy.utils.register_class(DisplayDeleteDummy)
-    bpy.utils.register_class(DisplaySimplify)
-    bpy.utils.register_class(ModifiersSubsurfLevel_0)
-    bpy.utils.register_class(ModifiersSubsurfLevel_1)
-    bpy.utils.register_class(ModifiersSubsurfLevel_2)
-    bpy.utils.register_class(ModifiersSubsurfLevel_3)
-    bpy.utils.register_class(ModifiersSubsurfLevel_4)
-    bpy.utils.register_class(ModifiersSubsurfLevel_5)
-    bpy.utils.register_class(ModifiersSubsurfLevel_6)
+
+# register the classes and props
+def register():
+
     bpy.utils.register_module(__name__)
-    pass
+
+    # Register Scene Properties
+    bpy.types.Scene.display_tools = bpy.props.PointerProperty(
+                                            type=display_tools_scene_props
+                                            )
 
 
 def unregister():
-    del bpy.types.Scene.Delay
-    del bpy.types.Scene.DelayTime
-    del bpy.types.Scene.DelayTimeGlobal
-    del bpy.types.Scene.EditActive
+    del bpy.types.Scene.display_tools
 
-    del bpy.types.Scene.FastNavigateStop
-    del bpy.types.Scene.OriginalMode
-    del bpy.types.Scene.BoundingMode
-    del bpy.types.Scene.FastMode
-    del bpy.types.Scene.ShowParticles
-    del bpy.types.Scene.ParticlesPercentageDisplay
-    del bpy.types.Scene.InitialParticles
-    del bpy.types.Scene.Symplify
-
-    bpy.utils.unregister_class(FastNavigate)
-    bpy.utils.unregister_class(DisplayTextured)
-    bpy.utils.unregister_class(DisplaySolid)
-    bpy.utils.unregister_class(DisplayWire)
-    bpy.utils.unregister_class(DisplayBounds)
-    bpy.utils.unregister_class(DisplayShadeSmooth)
-    bpy.utils.unregister_class(DisplayShadeFlat)
-    bpy.utils.unregister_class(DisplayShadelessOn)
-    bpy.utils.unregister_class(DisplayShadelessOff)
-    bpy.utils.unregister_class(DisplayWireframeOn)
-    bpy.utils.unregister_class(DisplayWireframeOff)
-    bpy.utils.unregister_class(DisplayBoundsOn)
-    bpy.utils.unregister_class(DisplayBoundsOff)
-    bpy.utils.unregister_class(DisplayDoubleSidedOn)
-    bpy.utils.unregister_class(DisplayDoubleSidedOff)
-    bpy.utils.unregister_class(DisplayXRayOn)
-    bpy.utils.unregister_class(DisplayXRayOff)
-    bpy.utils.unregister_class(DisplayModifiersRenderOn)
-    bpy.utils.unregister_class(DisplayModifiersRenderOff)
-    bpy.utils.unregister_class(DisplayModifiersViewportOn)
-    bpy.utils.unregister_class(DisplayModifiersViewportOff)
-    bpy.utils.unregister_class(DisplayModifiersEditOn)
-    bpy.utils.unregister_class(DisplayModifiersEditOff)
-    bpy.utils.unregister_class(DisplayModifiersCageOn)
-    bpy.utils.unregister_class(DisplayModifiersCageOff)
-    bpy.utils.unregister_class(DisplayModifiersExpand)
-    bpy.utils.unregister_class(DisplayModifiersCollapse)
-    bpy.utils.unregister_class(DisplayModifiersApply)
-    bpy.utils.unregister_class(DisplayModifiersDelete)
-    bpy.utils.unregister_class(DisplayAddDummy)
-    bpy.utils.unregister_class(DisplayDeleteDummy)
-    bpy.utils.unregister_class(DisplaySimplify)
-    bpy.utils.unregister_class(ModifiersSubsurfLevel_0)
-    bpy.utils.unregister_class(ModifiersSubsurfLevel_1)
-    bpy.utils.unregister_class(ModifiersSubsurfLevel_2)
-    bpy.utils.unregister_class(ModifiersSubsurfLevel_3)
-    bpy.utils.unregister_class(ModifiersSubsurfLevel_4)
-    bpy.utils.unregister_class(ModifiersSubsurfLevel_5)
-    bpy.utils.unregister_class(ModifiersSubsurfLevel_6)
     bpy.utils.unregister_module(__name__)
-    pass
+
 
 if __name__ == "__main__":
     register()
