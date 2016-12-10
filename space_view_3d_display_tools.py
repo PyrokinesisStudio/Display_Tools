@@ -44,11 +44,13 @@ from bpy.types import (
         Operator,
         Panel,
         PropertyGroup,
+        AddonPreferences,
         )
 from bpy.props import (
         IntProperty,
         BoolProperty,
         EnumProperty,
+        StringProperty,
         )
 
 
@@ -1094,20 +1096,65 @@ class display_tools_scene_props(PropertyGroup):
             )
 
 
+# Addons Preferences Update Panel
+panels = [
+        VIEW3D_PT_ModifierTools,
+        VIEW3D_PT_SceneVisualization,
+        VIEW3D_PT_ShadingSetup,
+        VIEW3D_PT_DisplayMode,
+        VIEW3D_PT_FastNavigate,
+        ]
+
+
+def update_panel(self, context):
+    try:
+        for panel in panels:
+            if "bl_rna" in panel.__dict__:
+                bpy.utils.unregister_class(panel)
+    except:
+        print("Display Tools: Updating panel locations has failed")
+        pass
+
+    for panel in panels:
+        try:
+            panel.bl_category = context.user_preferences.addons[__name__].preferences.category
+            bpy.utils.register_class(panel)
+        except:
+            print("Display Tools: Updating panel locations has failed")
+            pass
+
+
+class DisplayToolsPreferences(AddonPreferences):
+    # this must match the addon name, use '__package__'
+    # when defining this in a submodule of a python package.
+    bl_idname = __name__
+
+    category = StringProperty(
+            name="Tab Category",
+            description="Choose a name for the category of the panel",
+            default="Display Tools",
+            update=update_panel)
+
+    def draw(self, context):
+        layout = self.layout
+        row = layout.row()
+        col = row.column()
+        col.label(text="Tab Category:")
+        col.prop(self, "category", text="")
+
+
 # register the classes and props
 def register():
-
     bpy.utils.register_module(__name__)
-
     # Register Scene Properties
     bpy.types.Scene.display_tools = bpy.props.PointerProperty(
                                             type=display_tools_scene_props
                                             )
+    update_panel(None, bpy.context)
 
 
 def unregister():
     del bpy.types.Scene.display_tools
-
     bpy.utils.unregister_module(__name__)
 
 
