@@ -29,13 +29,6 @@ from bpy.types import Operator
 from bpy.props import BoolProperty
 
 
-# define base dummy class for inheritance
-class BasePollCheck:
-    @classmethod
-    def poll(cls, context):
-        return True
-
-
 # Fast Navigate toggle function
 def trigger_fast_navigate(trigger):
     scene = bpy.context.scene.display_tools
